@@ -1,0 +1,25 @@
+heartbeat.monitors:
+- type: http
+  schedule: '@every 5s'
+  urls:
+    - http://kibana:5601
+
+- type: icmp
+  schedule: '@every 5s'
+  hosts:
+    - elasticsearch
+    - kibana
+
+- type: tcp
+  id: elasticsearch
+  name: Elasticsearch TCP
+  hosts: ["elasticsearch:9200"]
+  schedule: '@every 5s'
+
+processors:
+- add_cloud_metadata: ~
+
+output.elasticsearch:
+  hosts: 'elasticsearch:9200'
+  username: "elastic"
+  password: "changeme"

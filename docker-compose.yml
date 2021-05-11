@@ -1,0 +1,151 @@
+version: '3.7'
+
+services:
+  elasticsearch:
+    image: localbuild/elasticsearch:${elk_version}
+    build:
+      context: elasticsearch/
+      args:
+         elk_version: ${elk_version}
+    volumes:
+      - ./elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+      - type: volume
+        source: elasticsearch
+        target: /usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    healthcheck:
+      test: ["CMD", "curl --silent --fail localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+    environment:
+      ES_JAVA_OPTS: "-Xmx1024m -Xms1024m"
+      ELASTIC_PASSWORD: changeme
+      # Use single node discovery in order to disable production mode and avoid bootstrap checks.
+      # see: https://www.elastic.co/guide/en/elasticsearch/reference/current/bootstrap-checks.html
+      discovery.type: single-node
+    networks:
+      - elk
+
+  logstash:
+    image: localbuild/logstash:${elk_version}
+    build:
+      context: logstash/
+      args:
+         elk_version: ${elk_version}
+    volumes:
+      - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+    ports:
+      - "5000:5000"
+    environment:
+      LS_JAVA_OPTS: "-Xmx256m -Xms256m"
+    networks:
+      - elk
+    depends_on:
+      - elasticsearch
+
+  kibana:
+    image: localbuild/kibana:${elk_version}
+    build:
+      context: kibana/
+      args:
+         elk_version: ${elk_version}
+    volumes:
+      - ./kibana/config/:/usr/share/kibana/config:ro
+    ports:
+      - "5601:5601"
+    healthcheck:
+      test: ["CMD", "curl --silent --fail localhost:5061/status || exit 1"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+    networks:
+      - elk
+    depends_on:
+      - elasticsearch
+
+  apm:
+     image: localbuild/apm:${elk_version}
+     build:
+       context: apm/
+       args:
+          elk_version: ${elk_version}
+     volumes:
+       - ./apm/config/apm-server.docker.yml:/usr/share/apm-server/apm-server.yml
+     ports:
+      - "8200:8200"
+     networks:
+      - elk
+     restart: on-failure
+     depends_on:
+       - elasticsearch
+       - kibana
+  
+  metricbeat:
+      image: localbuild/metricbeat:${elk_version}
+      build:
+        context: metricbeat/
+        args:
+           elk_version: ${elk_version}
+      volumes:
+        - ./metricbeat/config/metricbeat.docker.yml:/usr/share/metricbeat/metricbeat.yml:ro
+        - ./metricbeat/config/modules.d:/usr/share/metricbeat/modules.d:ro
+        - /var/run/docker.sock:/var/run/docker.sock
+      networks:
+       - elk
+      restart: on-failure
+      depends_on:
+        - elasticsearch
+        - kibana
+
+  filebeat:
+     image: localbuild/filebeat:${elk_version}
+     build:
+       context: filebeat/
+       args:
+          elk_version: ${elk_version}
+     user: root
+     volumes:
+       - ./filebeat/config/filebeat.yml:/usr/share/filebeat/filebeat.yml
+       #Mount the prospectors directory. Users can in turn add propspectors to this directory and they will be dynamically loaded.
+       - ./filebeat/config/prospectors.d/:/usr/share/filebeat/prospectors.d/
+       - ./filebeat/config/modules.d:/usr/share/filebeat/modules.d:ro
+       - /var/lib/docker/containers/:/var/lib/docker/containers/
+       - /var/run/docker.sock:/var/run/docker.sock
+       - type: volume
+         source: filebeat
+         target: /usr/share/filebeat/data
+     networks:
+      - elk
+     command: filebeat -e -strict.perms=false
+     restart: on-failure
+     depends_on:
+       - elasticsearch
+       - kibana
+  
+  heartbeat:
+     image : localbuild/heartbeat:${elk_version}
+     build:
+       context: heartbeat/
+       args:
+          elk_version: ${elk_version}
+     volumes:
+       - ./heartbeat/config/heartbeat.docker.yml:/usr/share/heartbeat/heartbeat.yml:ro
+     networks:
+      - elk
+     command: heartbeat -e --strict.perms=false 
+     restart: on-failure
+     depends_on:
+      - elasticsearch
+      - kibana
+
+networks:
+  elk:
+    driver: bridge
+
+volumes:
+  elasticsearch:
+  filebeat:
