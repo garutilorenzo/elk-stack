@@ -1,0 +1,165 @@
+version: '3.8'
+
+services:
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.14.1
+    hostname: "{{.Service.Name}}-{{.Task.Slot}}" 
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    configs:
+      - source: elastic_config
+        target: /usr/share/elasticsearch/config/elasticsearch.yml
+    volumes:
+      - type: volume
+        source: elasticsearch_vol
+        target: /usr/share/elasticsearch/data
+    environment:
+      node.name: "{{.Service.Name}}-{{.Task.Slot}}"
+      cluster.name: my_cluster
+      discovery.seed_hosts: elasticsearch
+      cluster.initial_master_nodes: elk_elasticsearch-1,elk_elasticsearch-2,elk_elasticsearch-3
+      ES_JAVA_OPTS: "-Xmx256m -Xms256m"
+      ELASTIC_PASSWORD: changeme
+      # Use single node discovery in order to disable production mode and avoid bootstrap checks.
+      # see: https://www.elastic.co/guide/en/elasticsearch/reference/current/bootstrap-checks.html
+      # Force publishing on the 'elk' overlay.
+      network.publish_host: _eth0_
+    networks:
+      - elk
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints: [node.role == worker]
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.14.1
+    ports:
+      - "5044:5044"
+      - "5000:5000"
+      - "9600:9600"
+    configs:
+      - source: logstash_config
+        target: /usr/share/logstash/config/logstash.yml
+      - source: logstash_pipeline
+        target: /usr/share/logstash/pipeline/logstash.conf
+    environment:
+      LS_JAVA_OPTS: "-Xmx256m -Xms256m"
+    networks:
+      - elk
+    deploy:
+      mode: replicated
+      replicas: 1
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.14.1
+    ports:
+      - "5601:5601"
+    configs:
+      - source: kibana_config
+        target: /usr/share/kibana/config/kibana.yml
+    networks:
+      - elk
+    deploy:
+      mode: replicated
+      replicas: 1
+  
+  apm:
+    image: docker.elastic.co/apm/apm-server:7.14.1
+    configs:
+      - source: apm_config
+        target: /usr/share/apm-server/apm-server.yml
+    networks:
+      - elk
+    deploy:
+      mode: replicated
+      replicas: 1
+
+  heartbeat:
+    image: docker.elastic.co/beats/heartbeat:7.14.1
+    configs:
+      - source: heartbeat_config
+        target: /usr/share/heartbeat/heartbeat.yml
+    networks:
+      - elk
+    deploy:
+      mode: replicated
+      replicas: 1
+
+  metricbeat:
+    image: docker.elastic.co/beats/metricbeat:7.14.1 
+    configs:
+      - source: metricbeat_config
+        target: /usr/share/metricbeat/metricbeat.yml 
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+    user: root #To read the docker socket
+    command: metricbeat -e -strict.perms=false
+    networks:
+      - elk 
+    deploy:
+      mode: global
+      placement:
+        constraints: [node.platform.os == linux]
+  
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:7.14.1 
+    configs:
+      - source: filebeat_config
+        target: /usr/share/filebeat/filebeat.yml
+    volumes:
+      - type: bind
+        source: /var/lib/docker/containers
+        target: /var/lib/docker/containers
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+    user: root #To read the docker socket
+    command: filebeat -e -strict.perms=false
+    networks:
+      - elk 
+    deploy:
+      mode: global
+      placement:
+        constraints: [node.platform.os == linux]
+
+volumes:
+  elasticsearch_vol:
+    name: '{{.Service.Name}}-{{.Task.Slot}}'
+    driver: local
+    driver_opts:
+      type: nfs
+      o: nfsvers=4,addr=192.168.25.250,rw
+      device: ":/docker/{{.Service.Name}}-{{.Task.Slot}}"
+
+configs:
+
+  elastic_config:
+    file: ./elasticsearch/config/elasticsearch.yml
+  logstash_config:
+    file: ./logstash/config/logstash.yml
+  logstash_pipeline:
+    file: ./logstash/pipeline/logstash.conf
+  kibana_config:
+    file: ./kibana/config/kibana.yml
+  metricbeat_config:
+    file: ./metricbeat/config/metricbeat.yml
+  filebeat_config:
+    file: ./filebeat/config/filebeat.yml
+  heartbeat_config:
+    file: ./heartbeat/config/heartbeat.docker.yml
+  apm_config:
+    file: ./apm/config/apm-server.docker.yml
+
+
+networks:
+  elk:
+    driver: overlay
