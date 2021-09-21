@@ -8,8 +8,31 @@
 # https://www.elastic.co/guide/en/beats/filebeat/index.html
 
 # For more available modules and options, please see the filebeat.reference.yml sample
-# configuration file.
+# configuration file
 
+filebeat.modules:
+  - module: system
+    # Syslog
+    syslog:
+      enabled: true
+
+      # Set custom paths for the log files. If left empty,
+      # Filebeat will choose the paths depending on your OS.
+      #var.paths:
+
+      # Convert the timestamp to UTC. Requires Elasticsearch >= 6.1.
+      #var.convert_timezone: false
+
+    # Authorization logs
+    auth:
+      enabled: true
+
+      # Set custom paths for the log files. If left empty,
+      # Filebeat will choose the paths depending on your OS.
+      #var.paths:
+
+      # Convert the timestamp to UTC. Requires Elasticsearch >= 6.1.
+      #var.convert_timezone: false
 #=========================== Filebeat inputs =============================
 
 filebeat.inputs:
@@ -72,15 +95,15 @@ filebeat.inputs:
    - add_docker_metadata: ~
 #============================= Filebeat modules ===============================
 
-filebeat.config.modules:
-  # Glob pattern for configuration loading
-  path: ${path.config}/modules.d/*.yml
+# filebeat.config.modules:
+#   # Glob pattern for configuration loading
+#   path: ${path.config}/modules.d/*.yml
 
-  # Set to true to enable config reloading
-  reload.enabled: true
+#   # Set to true to enable config reloading
+#   reload.enabled: true
 
-  # Period on which files under path should be checked for changes
-  #reload.period: 10s
+#   # Period on which files under path should be checked for changes
+#   #reload.period: 10s
 
 #================================ General =====================================
 
