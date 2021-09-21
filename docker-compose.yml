@@ -158,10 +158,10 @@ services:
       args:
         elk_version: ${elk_version}
     volumes:
-    - type: bind
-      source: ./heartbeat/config/heartbeat.docker.yml
-      target: /usr/share/heartbeat/heartbeat.yml
-      read_only: true
+      - type: bind
+        source: ./heartbeat/config/heartbeat.docker.yml
+        target: /usr/share/heartbeat/heartbeat.yml
+        read_only: true
     networks:
     - elk
     command: heartbeat -e --strict.perms=false 
